@@ -204,7 +204,10 @@ app.get('/articles/:id', (req, res) => {
 });
 
 // ─── PREDICTION ROUTE ────────────────────────────────────────
-app.post('/predict', (req, res) => {
+const multer = require('multer');
+const upload = multer({ storage: multer.memoryStorage() });
+
+app.post('/predict', upload.single('my_image'), (req, res) => {
   const userId = req.body.user_id || 'unknown';
   const result = getMockPrediction(userId);
   res.json(result);
