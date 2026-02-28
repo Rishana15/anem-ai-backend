@@ -64,10 +64,9 @@ const articles = [
   }
 ];
 
-// ─── SIMPLE IMAGE ANALYSIS (no Jimp needed) ──────────────────
+// ─── IMAGE ANALYSIS ──────────────────────────────────────────
 function analyzeImageBuffer(buffer) {
   try {
-    // Sample bytes from multiple parts of the image
     const total = buffer.length;
     const samples = [
       buffer.slice(Math.floor(total * 0.2), Math.floor(total * 0.4)),
@@ -82,41 +81,21 @@ function analyzeImageBuffer(buffer) {
     for (const sample of samples) {
       for (let i = 0; i < sample.length; i++) {
         const val = sample[i];
-        if (val > 180) highBytes++;      // very bright = pale
-        else if (val < 100) lowBytes++;  // very dark = shadows
+        if (val > 180) highBytes++;
+        else if (val < 100) lowBytes++;
         totalBytes++;
       }
     }
 
     const brightnessRatio = highBytes / totalBytes;
     const darkRatio = lowBytes / totalBytes;
-
-    // Pale conjunctiva = high brightness, low dark areas
-    // Pink/red conjunctiva = more mixed values
     const paleness = brightnessRatio - (darkRatio * 0.5);
     const isAnemia = paleness > 0.25;
 
     const confidence = Math.abs(paleness - 0.25) * 150;
     const accuracy = Math.min(90, Math.max(65, 70 + confidence)).toFixed(1);
 
-    console.log(`Analysis: brightnessRatio=${brightnessRatio.toFixed(3)}, darkRatio=${darkRatio.toFixed(3)}, paleness=${paleness.toFixed(3)}, anemia=${isAnemia}`);
-
-    return { isAnemia, accuracy };
-  } catch (e) {
-    console.log('Analysis error:', e.message);
-    return { isAnemia: false, accuracy: '75.0' };
-  }
-}
-
-    // High ratio of bright bytes = pale image = possible anemia
-    const brightnessRatio = highBytes / totalBytes;
-    const isAnemia = brightnessRatio > 0.45;
-
-    // Accuracy based on confidence
-    const confidence = Math.abs(brightnessRatio - 0.45) * 100;
-    const accuracy = Math.min(92, Math.max(65, 72 + confidence)).toFixed(1);
-
-    console.log(`Buffer analysis: brightnessRatio=${brightnessRatio.toFixed(3)}, anemia=${isAnemia}`);
+    console.log(`Analysis: brightness=${brightnessRatio.toFixed(3)}, dark=${darkRatio.toFixed(3)}, paleness=${paleness.toFixed(3)}, anemia=${isAnemia}`);
 
     return { isAnemia, accuracy };
   } catch (e) {
@@ -129,22 +108,15 @@ function analyzeImageBuffer(buffer) {
 app.post('/auth/register', async (req, res) => {
   try {
     const { name, birthDate, gender, email, password } = req.body;
-
     if (!name || !email || !password) {
       return res.status(400).json({ status: false, message: 'Name, email and password are required' });
     }
-
     const existingUser = users.find(u => u.email === email);
     if (existingUser) {
       return res.status(400).json({ status: false, message: 'Email already registered' });
     }
-
     const hashedPassword = await bcrypt.hash(password, 10);
-    users.push({
-      id: uuidv4(), name, birthDate, gender, email,
-      password: hashedPassword, createdAt: new Date().toISOString()
-    });
-
+    users.push({ id: uuidv4(), name, birthDate, gender, email, password: hashedPassword, createdAt: new Date().toISOString() });
     res.json({ status: true, message: 'Registration successful! Please login to continue.' });
   } catch (err) {
     res.status(500).json({ status: false, message: 'Server error' });
@@ -154,19 +126,12 @@ app.post('/auth/register', async (req, res) => {
 app.post('/auth/login', async (req, res) => {
   try {
     const { email, password } = req.body;
-
     const user = users.find(u => u.email === email);
     if (!user) return res.status(401).json({ status: false, message: 'Email not found' });
-
     const isValid = await bcrypt.compare(password, user.password);
     if (!isValid) return res.status(401).json({ status: false, message: 'Wrong password' });
-
     const token = jwt.sign({ id: user.id, email: user.email }, SECRET, { expiresIn: '7d' });
-
-    res.json({
-      status: true, message: 'Login successful', token,
-      data: { id: user.id, email: user.email }
-    });
+    res.json({ status: true, message: 'Login successful', token, data: { id: user.id, email: user.email } });
   } catch (err) {
     res.status(500).json({ status: false, message: 'Server error' });
   }
@@ -181,10 +146,7 @@ app.get('/users/:id', (req, res) => {
       userResult: { id: req.params.id, name: "Demo User", email: "demo@anem.ai", birthDate: "2000-01-01", gender: "Male" }
     });
   }
-  res.json({
-    status: true,
-    userResult: { id: user.id, name: user.name, email: user.email, birthDate: user.birthDate, gender: user.gender }
-  });
+  res.json({ status: true, userResult: { id: user.id, name: user.name, email: user.email, birthDate: user.birthDate, gender: user.gender } });
 });
 
 // ─── ARTICLE ROUTES ──────────────────────────────────────────
