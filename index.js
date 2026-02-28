@@ -3,7 +3,12 @@ const cors = require('cors');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { v4: uuidv4 } = require('uuid');
-const Jimp = require('jimp');
+let Jimp;
+try {
+  Jimp = require('jimp');
+} catch(e) {
+  console.log('Jimp not available:', e.message);
+}
 const multer = require('multer');
 
 const app = express();
@@ -69,6 +74,7 @@ const articles = [
 // ─── REAL COLOR ANALYSIS ─────────────────────────────────────
 async function analyzeEyeImage(imageBuffer) {
   try {
+    if (!Jimp) return null;
     const image = await Jimp.read(imageBuffer);
 
     const width = image.getWidth();
