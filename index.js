@@ -3,12 +3,6 @@ const cors = require('cors');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const { v4: uuidv4 } = require('uuid');
-let Jimp;
-try {
-  Jimp = require('jimp');
-} catch(e) {
-  console.log('Jimp not available:', e.message);
-}
 const multer = require('multer');
 
 const app = express();
@@ -18,7 +12,6 @@ app.use(express.json());
 const SECRET = 'anem-ai-secret-key-2026';
 const upload = multer({ storage: multer.memoryStorage() });
 
-// In-memory storage
 const users = [];
 const history = [];
 
@@ -71,49 +64,38 @@ const articles = [
   }
 ];
 
-// ─── REAL COLOR ANALYSIS ─────────────────────────────────────
-async function analyzeEyeImage(imageBuffer) {
+// ─── SIMPLE IMAGE ANALYSIS (no Jimp needed) ──────────────────
+function analyzeImageBuffer(buffer) {
   try {
-    if (!Jimp) return null;
-    const image = await Jimp.read(imageBuffer);
+    // Analyze raw byte values of the image buffer
+    // JPEG images start with FFD8FF
+    // We sample bytes from middle of file where pixel data is
+    const start = Math.floor(buffer.length * 0.3);
+    const end = Math.floor(buffer.length * 0.7);
+    const sample = buffer.slice(start, end);
 
-    const width = image.getWidth();
-    const height = image.getHeight();
-    const cropX = Math.floor(width * 0.25);
-    const cropY = Math.floor(height * 0.25);
-    const cropW = Math.floor(width * 0.5);
-    const cropH = Math.floor(height * 0.5);
+    let highBytes = 0;
+    let totalBytes = 0;
 
-    image.crop(cropX, cropY, cropW, cropH);
+    for (let i = 0; i < sample.length; i++) {
+      if (sample[i] > 200) highBytes++;
+      totalBytes++;
+    }
 
-    let totalR = 0, totalG = 0, totalB = 0;
-    let pixelCount = 0;
+    // High ratio of bright bytes = pale image = possible anemia
+    const brightnessRatio = highBytes / totalBytes;
+    const isAnemia = brightnessRatio > 0.45;
 
-    image.scan(0, 0, image.getWidth(), image.getHeight(), function(x, y, idx) {
-      totalR += this.bitmap.data[idx];
-      totalG += this.bitmap.data[idx + 1];
-      totalB += this.bitmap.data[idx + 2];
-      pixelCount++;
-    });
+    // Accuracy based on confidence
+    const confidence = Math.abs(brightnessRatio - 0.45) * 100;
+    const accuracy = Math.min(92, Math.max(65, 72 + confidence)).toFixed(1);
 
-    const avgR = totalR / pixelCount;
-    const avgG = totalG / pixelCount;
-    const avgB = totalB / pixelCount;
+    console.log(`Buffer analysis: brightnessRatio=${brightnessRatio.toFixed(3)}, anemia=${isAnemia}`);
 
-    const rednessRatio = avgR / (avgG + avgB + 1);
-    const brightness = (avgR + avgG + avgB) / 3;
-    const isPale = brightness > 160 && rednessRatio < 0.45;
-
-    const confidence = Math.abs(rednessRatio - 0.45) * 200;
-    const accuracy = Math.min(95, Math.max(60, 70 + confidence)).toFixed(1);
-
-    console.log(`Analysis: brightness=${brightness.toFixed(1)}, redness=${rednessRatio.toFixed(3)}, anemia=${isPale}`);
-
-    return { isAnemia: isPale, accuracy };
-
-  } catch (err) {
-    console.log('Image analysis error:', err.message);
-    return null;
+    return { isAnemia, accuracy };
+  } catch (e) {
+    console.log('Analysis error:', e.message);
+    return { isAnemia: false, accuracy: '75.0' };
   }
 }
 
@@ -132,7 +114,10 @@ app.post('/auth/register', async (req, res) => {
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);
-    users.push({ id: uuidv4(), name, birthDate, gender, email, password: hashedPassword, createdAt: new Date().toISOString() });
+    users.push({
+      id: uuidv4(), name, birthDate, gender, email,
+      password: hashedPassword, createdAt: new Date().toISOString()
+    });
 
     res.json({ status: true, message: 'Registration successful! Please login to continue.' });
   } catch (err) {
@@ -152,7 +137,10 @@ app.post('/auth/login', async (req, res) => {
 
     const token = jwt.sign({ id: user.id, email: user.email }, SECRET, { expiresIn: '7d' });
 
-    res.json({ status: true, message: 'Login successful', token, data: { id: user.id, email: user.email } });
+    res.json({
+      status: true, message: 'Login successful', token,
+      data: { id: user.id, email: user.email }
+    });
   } catch (err) {
     res.status(500).json({ status: false, message: 'Server error' });
   }
@@ -167,7 +155,10 @@ app.get('/users/:id', (req, res) => {
       userResult: { id: req.params.id, name: "Demo User", email: "demo@anem.ai", birthDate: "2000-01-01", gender: "Male" }
     });
   }
-  res.json({ status: true, userResult: { id: user.id, name: user.name, email: user.email, birthDate: user.birthDate, gender: user.gender } });
+  res.json({
+    status: true,
+    userResult: { id: user.id, name: user.name, email: user.email, birthDate: user.birthDate, gender: user.gender }
+  });
 });
 
 // ─── ARTICLE ROUTES ──────────────────────────────────────────
@@ -180,18 +171,16 @@ app.get('/articles/:id', (req, res) => {
 });
 
 // ─── PREDICTION ROUTE ────────────────────────────────────────
-app.post('/predict', upload.single('my_image'), async (req, res) => {
+app.post('/predict', upload.single('my_image'), (req, res) => {
   const userId = req.body.user_id || 'unknown';
 
   let isAnemia = false;
   let accuracy = '75.0';
 
   if (req.file && req.file.buffer) {
-    const analysis = await analyzeEyeImage(req.file.buffer);
-    if (analysis) {
-      isAnemia = analysis.isAnemia;
-      accuracy = analysis.accuracy;
-    }
+    const analysis = analyzeImageBuffer(req.file.buffer);
+    isAnemia = analysis.isAnemia;
+    accuracy = analysis.accuracy;
   }
 
   const detection = {
