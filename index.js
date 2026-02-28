@@ -98,17 +98,33 @@ function analyzeImageBuffer(buffer) {
 app.post('/auth/register', async (req, res) => {
   try {
     const { name, birthDate, gender, email, password } = req.body;
-    if (!name || !email || !password) {
-      return res.status(400).json({ status: false, message: 'Name, email and password are required' });
+    
+    // Log what we receive for debugging
+    console.log('Register attempt:', { name, email, hasPassword: !!password });
+    
+    if (!email || !password) {
+      return res.status(400).json({ status: false, message: 'Email and password are required' });
     }
+    
     const existingUser = users.find(u => u.email === email);
     if (existingUser) {
       return res.status(400).json({ status: false, message: 'Email already registered' });
     }
+    
     const hashedPassword = await bcrypt.hash(password, 10);
-    users.push({ id: uuidv4(), name, birthDate, gender, email, password: hashedPassword, createdAt: new Date().toISOString() });
+    users.push({ 
+      id: uuidv4(), 
+      name: name || 'User',
+      birthDate: birthDate || '', 
+      gender: gender || '', 
+      email, 
+      password: hashedPassword, 
+      createdAt: new Date().toISOString() 
+    });
+    
     res.json({ status: true, message: 'Registration successful! Please login to continue.' });
   } catch (err) {
+    console.log('Register error:', err.message);
     res.status(500).json({ status: false, message: 'Server error' });
   }
 });
